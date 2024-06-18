@@ -32,7 +32,7 @@ func isApplePlatform(platform string) bool {
 	return contains(applePlatforms, platform)
 }
 
-var applePlatforms = []string{"ios", "iossimulator", "macos", "maccatalyst", "appletvos", "appletvsimulator", "xros", "xrsimulator"}
+var applePlatforms = []string{"ios", "iossimulator", "macos", "maccatalyst", "appletvos", "appletvsimulator"}
 
 func platformArchs(platform string) []string {
 	switch platform {
