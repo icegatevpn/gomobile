@@ -32,13 +32,13 @@ func isApplePlatform(platform string) bool {
 	return contains(applePlatforms, platform)
 }
 
-var applePlatforms = []string{"ios", "iossimulator", "macos", "maccatalyst"}
+var applePlatforms = []string{"ios", "iossimulator", "macos", "maccatalyst", "appletvos", "appletvsimulator"}
 
 func platformArchs(platform string) []string {
 	switch platform {
-	case "ios":
+	case "ios", "appletvos", "xros":
 		return []string{"arm64"}
-	case "iossimulator":
+	case "iossimulator", "appletvsimulator", "xrsimulator":
 		return []string{"arm64", "amd64"}
 	case "macos", "maccatalyst":
 		return []string{"arm64", "amd64"}
@@ -58,7 +58,7 @@ func platformOS(platform string) string {
 	switch platform {
 	case "android":
 		return "android"
-	case "ios", "iossimulator":
+	case "ios", "iossimulator", "appletvos", "appletvsimulator", "xros", "xrsimulator":
 		return "ios"
 	case "macos", "maccatalyst":
 		// For "maccatalyst", Go packages should be built with GOOS=darwin,
@@ -93,6 +93,10 @@ func platformTags(platform string) []string {
 		// TODO(ydnar): remove tag "ios" when cgo supports Catalyst
 		// See golang.org/issues/47228
 		return []string{"ios", "macos", "maccatalyst"}
+	case "appletvos", "appletvsimulator":
+		return []string{"appletvos"}
+	case "xros", "xrsimulator":
+		return []string{"xros"}
 	default:
 		panic(fmt.Sprintf("unexpected platform: %s", platform))
 	}
@@ -185,6 +189,7 @@ func envInit() (err error) {
 				"CC=" + clang,
 				"CXX=" + clangpp,
 				"CGO_ENABLED=1",
+				"CGO_CFLAGS=-fstack-protector-strong",
 			}
 			if arch == "arm" {
 				androidEnv[arch] = append(androidEnv[arch], "GOARM=7")
@@ -203,18 +208,27 @@ func envInit() (err error) {
 			var env []string
 			var goos, sdk, clang, cflags string
 			var err error
+			var minIOSVersion = ""
+			var minTVOSVersion = ""
+			var minMacOSVersion = ""
 			switch platform {
 			case "ios":
 				goos = "ios"
 				sdk = "iphoneos"
 				clang, cflags, err = envClang(sdk)
-				cflags += " -miphoneos-version-min=" + buildIOSVersion
+				if buildIOSVersion != "" {
+					cflags += " -miphoneos-version-min=" + buildIOSVersion
+					minIOSVersion = buildIOSVersion
+				}
 				cflags += " -fembed-bitcode"
 			case "iossimulator":
 				goos = "ios"
 				sdk = "iphonesimulator"
 				clang, cflags, err = envClang(sdk)
-				cflags += " -mios-simulator-version-min=" + buildIOSVersion
+				if buildIOSVersion != "" {
+					cflags += " -mios-simulator-version-min=" + buildIOSVersion
+					minIOSVersion = buildIOSVersion
+				}
 				cflags += " -fembed-bitcode"
 			case "maccatalyst":
 				// Mac Catalyst is a subset of iOS APIs made available on macOS
@@ -253,6 +267,39 @@ func envInit() (err error) {
 				if arch == "arm64" {
 					cflags += " -fembed-bitcode"
 				}
+				if buildMacOSVersion != "" {
+					cflags += " -mmacosx-version-min=" + buildMacOSVersion
+					minMacOSVersion = buildMacOSVersion
+				}
+				cflags += " -mmacosx-version-min=" + buildMacOSVersion
+			case "appletvos":
+				goos = "ios"
+				sdk = "appletvos"
+				clang, cflags, err = envClang(sdk)
+				cflags += " -fembed-bitcode"
+				if buildTVOSVersion != "" {
+					cflags += " -mappletvos-version-min=" + buildTVOSVersion
+					minTVOSVersion = buildTVOSVersion
+				}
+			case "appletvsimulator":
+				goos = "ios"
+				sdk = "appletvsimulator"
+				clang, cflags, err = envClang(sdk)
+				cflags += " -fembed-bitcode"
+				if buildTVOSVersion != "" {
+					cflags += " -mappletvsimulator-version-min=" + buildTVOSVersion
+					minTVOSVersion = buildTVOSVersion
+				}
+			case "xros":
+				goos = "ios"
+				sdk = "xros"
+				clang, cflags, err = envClang(sdk)
+				cflags += " -fembed-bitcode"
+			case "xrsimulator":
+				goos = "ios"
+				sdk = "xrsimulator"
+				clang, cflags, err = envClang(sdk)
+				cflags += " -fembed-bitcode"
 			default:
 				panic(fmt.Errorf("unknown Apple target: %s/%s", platform, arch))
 			}
@@ -269,10 +316,26 @@ func envInit() (err error) {
 				"CXX="+clang+"++",
 				"CGO_CFLAGS="+cflags+" -arch "+archClang(arch),
 				"CGO_CXXFLAGS="+cflags+" -arch "+archClang(arch),
+				"CGO_CFLAGS="+cflags+" -arch "+archClang(arch)+" -fstack-protector-strong",
 				"CGO_LDFLAGS="+cflags+" -arch "+archClang(arch),
 				"CGO_ENABLED=1",
 				"DARWIN_SDK="+sdk,
 			)
+			if minIOSVersion != "" {
+				env = append(env,
+					"IPHONEOS_DEPLOYMENT_TARGET="+minIOSVersion,
+				)
+			}
+			if minMacOSVersion != "" {
+				env = append(env,
+					"MACOSX_DEPLOYMENT_TARGET="+minMacOSVersion,
+				)
+			}
+			if minTVOSVersion != "" {
+				env = append(env,
+					"TVOS_DEPLOYMENT_TARGET="+minTVOSVersion,
+				)
+			}
 			appleEnv[platform+"/"+arch] = env
 		}
 	}
